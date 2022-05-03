@@ -1,6 +1,7 @@
 App = {
   loading: false,
   contracts: {},
+  address: undefined,
     load: async () => {
       await App.loadWeb3()
         console.log("app loading...");
@@ -43,17 +44,18 @@ App = {
   },
 
   loadAccount: async() => {
-    web3.eth.defaultAccount=web3.eth.accounts[0]
-    console.log(App.account)
+    web3.eth.defaultAccount=web3.eth.accounts[0] //seems to just use whatever is connected to metamask
+    App.address = web3.eth.defaultAccount
+    console.log(App.address)
   },
 
   loadContract: async () => {
     // Create a JavaScript version of the smart contract
-    const todoList = await $.getJSON('TodoList.json')
-    App.contracts.TodoList = TruffleContract(todoList)
-    App.contracts.TodoList.setProvider(App.web3Provider)
+    const Ballot = await $.getJSON('Ballot.json')
+    App.contracts.Ballot = TruffleContract(Ballot)
+    App.contracts.Ballot.setProvider(App.web3Provider)
 
-    App.todoList = await App.contracts.TodoList.deployed()
+    App.Ballot = await App.contracts.Ballot.deployed()
   },
 
   render: async() => {
@@ -70,30 +72,40 @@ App = {
   },
   renderTasks: async () => {
     // Load the total task count from the blockchain
-    const taskCount = await App.todoList.itemCount()
+    const taskCount = await App.Ballot.proposalCount()
     const $taskTemplate = $('.card')
     const map1 = new Map();
 
     // Render out each task with a new task template
     for (var i = 1; i <= taskCount; i++) {
       // Fetch the task data from the blockchain
-      const task = await App.todoList.items(i)
+      const task = await App.Ballot.proposals(i)
       const taskId = task[0].toNumber()
       const taskTitle = task[3]
       const taskContent = task[4]
 
       // Create the html for the task
-      let html_string = '<div id = test-id style = "position:relative; left:80px; top:200px; "> <div class="card"><div class="item-header"> Card header </div> <div class="item-content p-2"> Card with header and footer... </div> <div class = "vote-arrows-id"> <span id = "xx" class="sprite vote-up"> </span><label class = "upvote-label"> yuh </label> <label class = "downvote-label"> yuh2 </label>  <span id = "xx" span class="sprite vote-down"> </span> </div> <br> <br> </div> </div>'
+      let html_string = '<div id = test-id style = "position:relative; left:80px; top:200px; "> <div class="card"><div class="proposal-header"> Card header </div> <div class="proposal-content p-2"> Card with header and footer... </div> <div class = "vote-arrows-id"> <span id = "xx" class="sprite vote-up"> </span><label class = "upvote-label"> yuh </label> <label class = "downvote-label"> yuh2 </label>  <span id = "xx" span class="sprite vote-down"> </span> </div> <br> <br> </div> </div>'
 
         var template = document.createElement('template');
-        html_string = html_string.trim().replace('test-id', 'test-' + i).replace('span id = "xx"','span id = ' + i).replace('span id = "xx"','span id = ' + i); 
+        html_string = html_string.trim().replace('test-id', 'test-' + i).replace('span id = "xx"','span id = ' + i + '-up').replace('span id = "xx"','span id = ' + i + '-down'); 
+        var currentVote = await App.Ballot.voters(App.address,i);
+        console.log(currentVote);
         template.innerHTML = html_string;
-        template.content.firstChild.getElementsByClassName("item-header")[0].innerText = taskTitle;
-        template.content.firstChild.getElementsByClassName("item-content")[0].innerText = taskContent;
+        template.content.firstChild.getElementsByClassName("proposal-header")[0].innerText = taskTitle;
+        template.content.firstChild.getElementsByClassName("proposal-content")[0].innerText = taskContent;
         template.content.firstChild.getElementsByClassName("upvote-label")[0].innerText = task[1];
         template.content.firstChild.getElementsByClassName("downvote-label")[0].innerText = task[2];
         map1.set(i,template.content.firstChild);
         document.body.appendChild(template.content.firstChild);
+        if(currentVote.toNumber() == 1) {
+          document.getElementById(i + '-up').classList.add("on");
+        }
+        else if(currentVote.toNumber() == -1){
+          document.getElementById(i + '-down').classList.add("on");
+        }
+        
+          
         //template.content.firstChild.getElementsByTagName("input")[0].check
      /* const $newTaskTemplate = $taskTemplate.clone()
       $newTaskTemplate.find('.content').html(taskContent)
@@ -119,34 +131,57 @@ App = {
 
     async function upvote(btn,event){
       console.log(btn.id)
+      console.log(event.currentTarget.id);
       var newChild = map1.get(parseInt(btn.id));
       //console.log(btn.className.substring(5));
+      console.log(event.currentTarget.classList);
       event.currentTarget.classList.toggle('on');
-      await App.todoList.itemUpvoted(parseInt(btn.id));
-      const item = await App.todoList.items(parseInt(btn.id));
-      console.log(item);
-      console.log("Upvotes: " + item[1]);
-      newChild.getElementsByClassName("upvote-label")[0].innerText = item[1];
-      newChild.getElementsByClassName("downvote-label")[0].innerText = item[2];
+      if (event.currentTarget.id.includes('up')) {
+        let other_id = event.currentTarget.id.split("-")[0] + '-down';
+        document.getElementById(other_id).classList.remove("on");
+      }
+      else {
+        let other_id = event.currentTarget.id.split("-")[0] + '-up'
+        document.getElementById(other_id).classList.remove("on");
+      }
+     
+      await App.Ballot.proposalUpvoted(parseInt(btn.id),App.address);
+      const proposal = await App.Ballot.proposals(parseInt(btn.id));
+      console.log(proposal);
+      newChild.getElementsByClassName("upvote-label")[0].innerText = proposal[1];
+      newChild.getElementsByClassName("downvote-label")[0].innerText = proposal[2];
+  
       document.body.replaceChild(newChild,map1.get(parseInt(btn.id)));
       map1.set(parseInt(btn.id),newChild);
-      console.log("Downvotes: " + item[2]);
+      console.log("Upvotes: " + proposal[1]);
+      console.log("Downvotes: " + proposal[2]);
+      console.log("currentState: "+ proposal[5]);
     }
 
     async function downvote(btn,event){
       event.currentTarget.classList.toggle('on');
+      console.log(event.currentTarget.id);
+
+      if (event.currentTarget.id.includes('up')) {
+        let other_id = event.currentTarget.id.split("-")[0] + '-down';
+        document.getElementById(other_id).classList.remove("on");
+      }
+      else {
+        let other_id = event.currentTarget.id.split("-")[0] + '-up'
+        document.getElementById(other_id).classList.remove("on");
+      }
       console.log(btn.id)
       var newChild = map1.get(parseInt(btn.id));
       //console.log(btn.className.substring(5));
-      await App.todoList.itemDownvoted(parseInt(btn.id));
-      const item = await App.todoList.items(parseInt(btn.id));
-      console.log(item);
-      console.log("Upvotes: " + item[1]);
-      newChild.getElementsByClassName("upvote-label")[0].innerText = item[1];
-      newChild.getElementsByClassName("downvote-label")[0].innerText = item[2];
+      await App.Ballot.proposalDownvoted(parseInt(btn.id),App.address);
+      const proposal = await App.Ballot.proposals(parseInt(btn.id));
+      console.log(proposal);
+      console.log("Upvotes: " + proposal[1]);
+      newChild.getElementsByClassName("upvote-label")[0].innerText = proposal[1];
+      newChild.getElementsByClassName("downvote-label")[0].innerText = proposal[2];
       document.body.replaceChild(newChild,map1.get(parseInt(btn.id)));
       map1.set(parseInt(btn.id),newChild);
-      console.log("Downvotes: " + item[2]);
+      console.log("Downvotes: " + proposal[2]);
     }
 
     for (const btn of document.querySelectorAll('.vote-down')) {
@@ -157,7 +192,7 @@ App = {
   toggleCompleted: async (e) => {
     App.setLoading(true)
     const taskId = e.target.name
-    await App.todoList.toggleCompleted(taskId)
+    await App.Ballot.toggleCompleted(taskId)
     window.location.reload()
   },
   
