@@ -155,7 +155,7 @@ App = {
       map1.set(parseInt(btn.id),newChild);
       console.log("Upvotes: " + proposal[1]);
       console.log("Downvotes: " + proposal[2]);
-      console.log("currentState: "+ proposal[5]);
+      console.log("currentState: "+ await App.Ballot.voters(App.address,i));
     }
 
     async function downvote(btn,event){
@@ -208,7 +208,6 @@ App = {
       content.show()
     }
   },
-  
 
 }
 
